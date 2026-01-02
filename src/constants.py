@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple
 # ================================
 # Gemini API 관련 상수
 # ================================
-GEMINI_MODEL_NAME = "gemini-2.5-flash-image-preview"
+GEMINI_MODEL_NAME = "gemini-3-pro-image-preview"
 GEMINI_CODENAME = "nano-banana"
 
 # 토큰 및 비용
@@ -17,7 +17,7 @@ GEMINI_TOKENS_PER_IMAGE = 1290
 GEMINI_COST_PER_IMAGE = 0.039  # USD
 
 # 이미지 해상도 및 형식
-GEMINI_DEFAULT_RESOLUTION = (1024, 1024)
+GEMINI_DEFAULT_RESOLUTION = (2048, 2048)  # 2K
 GEMINI_SUPPORTED_FORMATS = ["png", "jpeg", "webp"]
 GEMINI_MAX_IMAGE_SIZE_MB = 20  # Gemini API 제한
 
@@ -27,7 +27,7 @@ GEMINI_MAX_IMAGE_SIZE_MB = 20  # Gemini API 제한
 MCP_TOOLS = {
     "nanobanana_generate": {
         "name": "nanobanana_generate",
-        "description": "Generate images from text prompts using Gemini 2.5 Flash Image",
+        "description": "Generate images from text prompts using Gemini 3 Pro Image",
         "category": "image_generation"
     },
     "nanobanana_edit": {
@@ -251,7 +251,7 @@ MAX_FILENAME_LENGTH = 255
 # ================================
 PROJECT_VERSION = "1.0.0"
 PROJECT_NAME = "nanobanana-mcp"
-PROJECT_DESCRIPTION = "Gemini 2.5 Flash Image MCP Server for Claude Code"
+PROJECT_DESCRIPTION = "Gemini 3 Pro Image MCP Server for Claude Code"
 PROJECT_AUTHOR = "Claude Code Assistant"
 
 # API 버전

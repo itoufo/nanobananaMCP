@@ -1,7 +1,7 @@
 """
 nanobanana MCPサーバー
 
-GoogleのGemini 2.5 Flash Image APIをClaude Codeで使用できるModel Context Protocol (MCP) サーバーです。
+GoogleのGemini 3 Pro Image APIをClaude Codeで使用できるModel Context Protocol (MCP) サーバーです。
 """
 
 import asyncio
