@@ -1,7 +1,7 @@
-# 나노바나나 MCP 서버 .gitignore
+# nanobanana MCP Server .gitignore
 
 # ================================
-# 환경 설정 및 비밀 정보
+# 環境設定・機密情報 (IMPORTANT!)
 # ================================
 .env
 .env.local
@@ -10,6 +10,15 @@ config.local.py
 secrets/
 *.key
 *.pem
+
+# APIキーファイル (絶対にコミットしない)
+.api_key
+.nanobanana_api_key
+*_api_key
+*.api_key
+
+# APIキーを含むスクリプト
+run-mcp.sh
 
 # ================================
 # Python
@@ -151,7 +160,7 @@ dmypy.json
 cython_debug/
 
 # ================================
-# IDE 및 에디터
+# IDE・エディタ
 # ================================
 # VSCode
 .vscode/
@@ -180,7 +189,7 @@ tramp
 .\#*
 
 # ================================
-# 운영체제
+# OS関連
 # ================================
 # macOS
 .DS_Store
@@ -225,48 +234,48 @@ $RECYCLE.BIN/
 .nfs*
 
 # ================================
-# 나노바나나 MCP 특화
+# nanobanana MCP 専用
 # ================================
-# 생성된 이미지 파일들
+# 生成された画像ファイル
 outputs/
 temp/
 cache/
 generated_images/
 
-# 로그 파일들
+# ログファイル
 logs/
 *.log
 
-# 테스트 결과물
+# テスト結果
 test_outputs/
 test_images/
 
-# 임시 파일들
+# 一時ファイル
 tmp/
 temporary/
 .tmp/
 
-# MCP 관련 임시 파일
+# MCP関連の一時ファイル
 mcp_cache/
 .mcp/
 
-# MCP 테스트 설정 파일들 (API 키 포함)
+# MCPテスト設定ファイル (APIキー含む)
 test_mcp_config.json
 test_installed_mcp_config.json
 *_mcp_config.json
 
-# 백업 파일들
+# バックアップファイル
 *.bak
 *.backup
 *.old
 
-# 압축 파일들
+# 圧縮ファイル
 *.zip
 *.tar.gz
 *.rar
 *.7z
 
-# 문서 생성 파일들 (LaTeX 등)
+# ドキュメント生成ファイル (LaTeX等)
 *.aux
 *.fdb_latexmk
 *.fls
@@ -274,21 +283,21 @@ test_installed_mcp_config.json
 *.toc
 
 # ================================
-# Claude Code 관련 파일들
+# Claude Code関連ファイル
 # ================================
-# Claude 설정 디렉토리
+# Claude設定ディレクトリ
 .claude/
 .claude.md
 
-# Claude 문서 및 설정 파일들
+# Claude設定ファイル
 CLAUDE.md
 CLAUDE.md.bak
 *.claude.md
 
 # ================================
-# 이미지 및 미디어 파일들
+# 画像・メディアファイル
 # ================================
-# 이미지 파일들 (소스 코드와 관련 없는)
+# 画像ファイル (ソースコードと無関係)
 *.png
 *.jpg
 *.jpeg
@@ -298,7 +307,7 @@ CLAUDE.md.bak
 *.tiff
 *.svg
 
-# 동영상 파일들
+# 動画ファイル
 *.mp4
 *.avi
 *.mov
@@ -306,7 +315,7 @@ CLAUDE.md.bak
 *.flv
 *.mkv
 
-# 오디오 파일들
+# 音声ファイル
 *.mp3
 *.wav
 *.flac
@@ -314,9 +323,9 @@ CLAUDE.md.bak
 *.ogg
 
 # ================================
-# 기타 실행과 관련없는 파일들
+# その他実行に関係ないファイル
 # ================================
-# 문서 파일들
+# ドキュメントファイル
 *.pdf
 *.doc
 *.docx
@@ -325,7 +334,7 @@ CLAUDE.md.bak
 *.xls
 *.xlsx
 
-# 아카이브 파일들 (이미 포함되어 있지만 추가)
+# アーカイブファイル
 *.tar
 *.tar.bz2
 *.tar.xz
@@ -333,24 +342,24 @@ CLAUDE.md.bak
 *.bz2
 *.xz
 
-# 실행 파일들 (Windows)
+# 実行ファイル (Windows)
 *.exe
 *.msi
 *.dll
 
-# 데이터 파일들
+# データファイル
 *.db
 *.sqlite
 *.json.bak
 *.csv.bak
 
-# 개발 도구 출력물
+# 開発ツール出力
 node_modules/
 bower_components/
 .npm/
 .yarn/
 
-# 에디터 임시 파일들
+# エディタ一時ファイル
 .#*
 *#
 .*.un~

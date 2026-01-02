@@ -1,10 +1,10 @@
 """
-API 키 로더 모듈
+APIキーローダーモジュール
 
-터미널 환경변수는 전혀 사용하지 않고, 오직 .env 파일 또는 MCP 설정에서만 키를 읽어 
-명시적으로 SDK에 전달하는 보안 강화 모듈입니다.
+ターミナル環境変数を一切使用せず、.envファイルまたはMCP設定からのみキーを読み取り、
+明示的にSDKに渡すセキュリティ強化モジュールです。
 
-우선순위: MCP 설정(env) > .env > (없으면 에러)
+優先順位: os.environ > .api_keyファイル > MCP設定(env) > .env > (なければエラー)
 """
 
 from pathlib import Path
@@ -16,23 +16,73 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def load_from_api_key_file() -> Dict[str, str]:
+    """
+    .api_keyファイルからAPIキーをロードします。
+    MCPサーバーで環境変数が渡されない場合のフォールバックです。
+
+    Returns:
+        Dict[str, str]: 環境変数辞書
+    """
+    # プロジェクトルートの.api_keyファイルを探す
+    possible_paths = [
+        Path(__file__).parent.parent / ".api_key",  # src/../.api_key
+        Path.home() / ".nanobanana_api_key",
+        Path(".api_key"),
+    ]
+
+    for path in possible_paths:
+        if path.exists():
+            try:
+                val = path.read_text().strip()
+                if val:
+                    logger.debug(f"Found API key in file: {path}")
+                    return {"GEMINI_API_KEY": val}
+            except Exception as e:
+                logger.warning(f"Failed to read API key file {path}: {e}")
+
+    return {}
+
+
+def load_from_os_environ() -> Dict[str, str]:
+    """
+    OS環境変数からAPIキー関連変数をロードします。
+    MCPサーバーはClaude Codeからenv設定をos.environで受け取ります。
+
+    Returns:
+        Dict[str, str]: 環境変数辞書
+    """
+    import os
+
+    CANDIDATES = ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_AI_API_KEY"]
+    result = {}
+
+    for key_name in CANDIDATES:
+        val = os.environ.get(key_name, "").strip()
+        if val:
+            result[key_name] = val
+            logger.debug(f"Found {key_name} in os.environ")
+
+    return result
+
+
 def load_from_env_file(env_path: str = ".env") -> Dict[str, str]:
     """
-    .env 파일에서 키-값 쌍을 로드합니다.
-    중요: 프로세스 환경변수를 건드리지 않습니다.
-    
+    .envファイルからキー・バリューのペアをロードします。
+    重要: プロセス環境変数には触れません。
+
     Args:
-        env_path: .env 파일 경로 (기본: ".env")
-        
+        env_path: .envファイルパス (デフォルト: ".env")
+
     Returns:
-        Dict[str, str]: 환경변수 딕셔너리
+        Dict[str, str]: 環境変数辞書
     """
     env_file = Path(env_path)
-    
+
     if not env_file.exists():
         logger.debug(f"Env file not found: {env_path}")
         return {}
-    
+
     try:
         env_vars = dotenv_values(str(env_file))
         logger.debug(f"Loaded {len(env_vars)} variables from {env_path}")
@@ -47,17 +97,17 @@ def load_from_mcp_settings(
     server_name: Optional[str] = None
 ) -> Dict[str, str]:
     """
-    MCP 설정 파일에서 환경변수를 로드합니다.
-    
+    MCP設定ファイルから環境変数をロードします。
+
     Args:
-        settings_path: MCP 설정 파일 경로 (예: ~/.config/Claude/claude_desktop_config.json)
-        server_name: mcpServers에서 사용할 서버 이름 (예: "nanobanana")
-        
+        settings_path: MCP設定ファイルパス (例: ~/.config/Claude/claude_desktop_config.json)
+        server_name: mcpServersで使用するサーバー名 (例: "nanobanana")
+
     Returns:
-        Dict[str, str]: 환경변수 딕셔너리
+        Dict[str, str]: 環境変数辞書
     """
     if not settings_path:
-        # 기본 Claude Desktop 설정 경로들 시도
+        # デフォルトClaude Desktop設定パスを試行
         possible_paths = [
             Path.home() / ".config" / "Claude" / "claude_desktop_config.json",
             Path.home() / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json",
@@ -88,13 +138,13 @@ def load_from_mcp_settings(
             logger.debug("No mcpServers section found in settings")
             return {}
         
-        # 특정 서버 이름이 주어진 경우
+        # 特定サーバー名が指定された場合
         if server_name and server_name in servers:
             env_vars = servers[server_name].get("env", {}) or {}
             logger.debug(f"Loaded {len(env_vars)} variables from MCP server '{server_name}'")
             return {k: str(v) for k, v in env_vars.items()}
-        
-        # 서버명이 주어지지 않은 경우 전체 env merge (뒤가 우선)
+
+        # サーバー名が指定されていない場合は全envをマージ (後が優先)
         merged = {}
         for srv_name, srv_config in servers.items():
             srv_env = srv_config.get("env", {}) or {}
@@ -111,18 +161,18 @@ def load_from_mcp_settings(
 
 def pick_gemini_key(*sources: Dict[str, str]) -> Optional[str]:
     """
-    여러 소스에서 Gemini API 키를 우선순위에 따라 선택합니다.
-    
-    우선순위:
+    複数ソースからGemini APIキーを優先順位に従って選択します。
+
+    優先順位:
     1. GEMINI_API_KEY
-    2. GOOGLE_API_KEY  
+    2. GOOGLE_API_KEY
     3. GOOGLE_AI_API_KEY
-    
+
     Args:
-        *sources: 키-값 딕셔너리들 (앞쪽이 우선순위 높음)
-        
+        *sources: キー・バリュー辞書 (前方が優先度高)
+
     Returns:
-        Optional[str]: 발견된 API 키 또는 None
+        Optional[str]: 発見されたAPIキーまたはNone
     """
     CANDIDATES = ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_AI_API_KEY"]
     
@@ -142,16 +192,16 @@ def pick_gemini_key(*sources: Dict[str, str]) -> Optional[str]:
 
 def get_key_source_info(*sources: Dict[str, str]) -> Dict[str, Any]:
     """
-    키의 출처 정보를 반환합니다 (디버깅/검증용).
-    
+    キーの出所情報を返します (デバッグ/検証用)。
+
     Args:
-        *sources: 키-값 딕셔너리들
-        
+        *sources: キー・バリュー辞書
+
     Returns:
-        Dict[str, Any]: 키 출처 정보
+        Dict[str, Any]: キー出所情報
     """
     CANDIDATES = ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_AI_API_KEY"]
-    SOURCE_NAMES = ["MCP_Settings", ".env_File", "Unknown"]
+    SOURCE_NAMES = ["OS_Environ", "API_Key_File", "MCP_Settings", ".env_File", "Unknown"]
     
     info = {
         "found_key": None,
@@ -183,7 +233,7 @@ def get_key_source_info(*sources: Dict[str, str]) -> Dict[str, Any]:
 
 class SecureKeyLoader:
     """
-    보안 강화 API 키 로더 클래스
+    セキュリティ強化APIキーローダークラス
     """
     
     def __init__(
@@ -194,38 +244,42 @@ class SecureKeyLoader:
     ):
         """
         Args:
-            mcp_settings_path: MCP 설정 파일 경로
-            mcp_server_name: MCP 서버 이름
-            env_file: .env 파일 경로
+            mcp_settings_path: MCP設定ファイルパス
+            mcp_server_name: MCPサーバー名
+            env_file: .envファイルパス
         """
         self.mcp_settings_path = mcp_settings_path
         self.mcp_server_name = mcp_server_name
         self.env_file = env_file
-        
-        # 키 로드
+
+        # キーロード (優先順位: os.environ > .api_keyファイル > MCP設定ファイル > .envファイル)
+        self.os_env = load_from_os_environ()
+        self.api_key_file_env = load_from_api_key_file()
         self.mcp_env = load_from_mcp_settings(mcp_settings_path, mcp_server_name)
         self.file_env = load_from_env_file(env_file)
-        
-        # 키 선택 (MCP 우선)
-        self.api_key = pick_gemini_key(self.mcp_env, self.file_env)
-        self.key_info = get_key_source_info(self.mcp_env, self.file_env)
+
+        # キー選択 (os.environ優先、次に.api_keyファイル)
+        self.api_key = pick_gemini_key(self.os_env, self.api_key_file_env, self.mcp_env, self.file_env)
+        self.key_info = get_key_source_info(self.os_env, self.api_key_file_env, self.mcp_env, self.file_env)
         
         logger.info(f"Key loader initialized - Found key: {self.key_info['found_key']}")
         if self.key_info['found_key']:
             logger.info(f"Key source: {self.key_info['source_name']} ({self.key_info['key_name']})")
     
     def get_api_key(self) -> Optional[str]:
-        """API 키 반환"""
+        """APIキーを返す"""
         return self.api_key
-    
+
     def has_key(self) -> bool:
-        """API 키 존재 여부"""
+        """APIキーの存在確認"""
         return bool(self.api_key)
-    
+
     def get_debug_info(self) -> Dict[str, Any]:
-        """디버그 정보 반환"""
+        """デバッグ情報を返す"""
         return {
             "key_info": self.key_info,
+            "os_env_count": len(self.os_env),
+            "api_key_file_count": len(self.api_key_file_env),
             "mcp_env_count": len(self.mcp_env),
             "file_env_count": len(self.file_env),
             "settings_path": self.mcp_settings_path,
@@ -235,10 +289,10 @@ class SecureKeyLoader:
     
     def verify_no_os_env_pollution(self) -> Dict[str, Any]:
         """
-        OS 환경변수 오염이 없는지 검증합니다.
-        
+        OS環境変数の汚染がないことを検証します。
+
         Returns:
-            Dict[str, Any]: 검증 결과
+            Dict[str, Any]: 検証結果
         """
         import os
         

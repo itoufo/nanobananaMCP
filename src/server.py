@@ -1,7 +1,7 @@
 """
-나노바나나 MCP 서버
+nanobanana MCPサーバー
 
-Google의 Gemini 2.5 Flash Image API를 Claude Code에서 사용할 수 있는 Model Context Protocol (MCP) 서버입니다.
+GoogleのGemini 2.5 Flash Image APIをClaude Codeで使用できるModel Context Protocol (MCP) サーバーです。
 """
 
 import asyncio
@@ -9,6 +9,7 @@ import logging
 import os
 import signal
 import sys
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 from fastmcp import FastMCP
@@ -20,20 +21,77 @@ from .gemini_client import create_gemini_client, get_gemini_client
 from .tools import generate, edit, blend, status
 from .models.schemas import create_error_response
 
-# 설정 및 로깅 초기화
+# 設定とロギング初期化
 settings = get_settings()
 setup_logging(settings)
 logger = logging.getLogger(__name__)
 
-# FastMCP 서버 인스턴스 생성
+
+# ================================
+# Lifespanコンテキストマネージャー
+# ================================
+
+@asynccontextmanager
+async def lifespan(mcp):
+    """FastMCPライフサイクル管理 - startup/shutdownをFastMCPイベントループ内で実行"""
+    # Startup
+    try:
+        logger.info("Starting nanobanana-mcp MCP Server...")
+
+        # Geminiクライアント初期化
+        gemini_client = await create_gemini_client()
+        logger.info("Gemini client initialized successfully")
+
+        # 出力ディレクトリの確認と作成
+        settings.output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Output directory ready: {settings.output_dir}")
+
+        logger.info("Server startup completed successfully")
+
+    except Exception as e:
+        logger.error(f"Server startup error: {e}")
+        raise
+
+    yield  # サーバー実行
+
+    # Shutdown
+    try:
+        logger.info("Shutting down Nanobanana MCP Server...")
+
+        # 統計情報をログ
+        try:
+            gemini_client = get_gemini_client()
+            stats = gemini_client.get_statistics()
+            logger.info(f"Session statistics: {stats}")
+        except Exception as e:
+            logger.warning(f"Could not retrieve session statistics: {e}")
+
+        # 最終クリーンアップ
+        if settings.dev_mode:
+            try:
+                from .utils.file_manager import get_file_manager
+                file_manager = get_file_manager()
+                cache_result = file_manager.manage_cache()
+                logger.info(f"Cache management: {cache_result}")
+            except Exception as e:
+                logger.warning(f"Cache management failed: {e}")
+
+        logger.info("Nanobanana MCP Server shut down gracefully")
+
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+
+
+# FastMCPサーバーインスタンス生成 (lifespan含む)
 mcp_server = FastMCP(
     name=settings.server_name,
-    version=settings.server_version
+    version=settings.server_version,
+    lifespan=lifespan
 )
 
 
 # ================================
-# MCP 도구 등록
+# MCPツール登録
 # ================================
 
 @mcp_server.tool()
@@ -143,11 +201,11 @@ async def nanobanana_status(
 
 
 # ================================
-# MCP 리소스 (선택적)
+# MCPリソース (オプション)
 # ================================
 
 class ServerInfoResource(BaseModel):
-    """서버 정보 리소스"""
+    """サーバー情報リソース"""
     name: str
     version: str
     mcp_version: str
@@ -157,7 +215,7 @@ class ServerInfoResource(BaseModel):
 
 @mcp_server.resource("server://info")
 async def get_server_info() -> ServerInfoResource:
-    """서버 정보 리소스 제공"""
+    """サーバー情報リソースを提供"""
     return ServerInfoResource(
         name=PROJECT_NAME,
         version=PROJECT_VERSION,
@@ -173,98 +231,37 @@ async def get_server_info() -> ServerInfoResource:
 
 
 # ================================
-# 서버 이벤트 핸들러
-# ================================
-
-async def startup():
-    """서버 시작 시 초기화"""
-    try:
-        logger.info("Starting nanobanana-mcp MCP Server...")
-        
-        # Gemini 클라이언트 초기화
-        gemini_client = await create_gemini_client()
-        logger.info("Gemini client initialized successfully")
-        
-        # 출력 디렉토리 확인 및 생성
-        settings.output_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Output directory ready: {settings.output_dir}")
-        
-        logger.info("Server startup completed successfully")
-        
-    except Exception as e:
-        logger.error(f"Server startup error: {e}")
-        raise
-
-
-async def shutdown():
-    """서버 종료 시 정리"""
-    try:
-        logger.info("Shutting down Nanobanana MCP Server...")
-        
-        # 통계 정보 로그
-        try:
-            gemini_client = get_gemini_client()
-            stats = gemini_client.get_statistics()
-            logger.info(f"Session statistics: {stats}")
-        except Exception as e:
-            logger.warning(f"Could not retrieve session statistics: {e}")
-        
-        # 최종 정리 작업
-        if settings.dev_mode:
-            try:
-                from .utils.file_manager import get_file_manager
-                file_manager = get_file_manager()
-                cache_result = file_manager.manage_cache()
-                logger.info(f"Cache management: {cache_result}")
-            except Exception as e:
-                logger.warning(f"Cache management failed: {e}")
-        
-        logger.info("👋 Nanobanana MCP Server shut down gracefully")
-        
-    except Exception as e:
-        logger.error(f"Error during shutdown: {e}")
-
-
-# ================================
-# 시그널 핸들링 (우아한 종료)
+# シグナルハンドリング (グレースフルシャットダウン)
 # ================================
 
 def signal_handler(signum: int, frame) -> None:
-    """시그널 핸들러 (Ctrl+C 등)"""
+    """シグナルハンドラー (Ctrl+C等)
+
+    Note: 実際のcleanupはlifespanコンテキストマネージャーで処理
+    """
     logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-    
-    # 비동기 종료 작업을 위한 이벤트 루프 처리
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(shutdown())
-        else:
-            asyncio.run(shutdown())
-    except Exception as e:
-        logger.error(f"Error in signal handler: {e}")
-    finally:
-        sys.exit(0)
+    sys.exit(0)
 
 
 # ================================
-# 서버 실행 함수들
+# サーバー実行関数
 # ================================
 
 async def run_server_async():
-    """비동기 서버 실행"""
+    """非同期サーバー実行
+
+    Note: startup/shutdownはlifespanコンテキストマネージャーで処理
+    """
     try:
-        # 시그널 핸들러 등록 (Unix 계열에서만)
+        # シグナルハンドラー登録 (Unix系のみ)
         try:
             signal.signal(signal.SIGINT, signal_handler)
             signal.signal(signal.SIGTERM, signal_handler)
         except AttributeError:
-            # Windows에서는 일부 시그널이 지원되지 않을 수 있음
+            # Windowsでは一部シグナルがサポートされない場合あり
             logger.warning("Some signals not supported on this platform")
-        
-        # 서버 시작
-        await startup()
-        
-        # 서버 실행
+
+        # サーバー実行 (lifespanがstartup/shutdownを処理)
         if settings.dev_mode:
             logger.info("Server running in stdio mode for MCP")
             await mcp_server.run(transport="stdio")
@@ -275,28 +272,26 @@ async def run_server_async():
                 port=settings.port,
                 transport="websocket"
             )
-        
+
     except KeyboardInterrupt:
         logger.info("Server interrupted by user")
     except Exception as e:
         logger.error(f"Server error: {e}")
         raise
-    finally:
-        await shutdown()
 
 
 def run_server():
-    """동기 서버 실행 (메인 엔트리포인트)"""
+    """同期サーバー実行 (メインエントリーポイント)"""
     try:
         logger.info(f"Starting {PROJECT_NAME} MCP Server...")
-        
-        # MCP stdio 모드에서는 FastMCP가 이벤트 루프를 직접 관리
+
+        # MCP stdioモードではFastMCPがイベントループを直接管理
         if settings.dev_mode:
             logger.info("Starting MCP server in stdio mode...")
-            # 동기적 시작 - FastMCP가 내부적으로 이벤트 루프 생성
+            # 同期的開始 - FastMCPが内部でイベントループを生成
             setup_and_run_mcp_sync()
         else:
-            # WebSocket 모드에서는 기존 방식 유지
+            # WebSocketモードでは既存方式を維持
             logger.info("Starting WebSocket mode...")
             import asyncio
             asyncio.run(run_server_async())
@@ -309,39 +304,28 @@ def run_server():
 
 
 def setup_and_run_mcp_sync():
-    """MCP stdio 모드를 위한 동기적 설정 및 실행"""
+    """MCP stdioモード用の同期的設定と実行
+
+    Note: startup/shutdownはlifespanコンテキストマネージャーで処理
+    """
     try:
         logger.info("Initializing MCP server synchronously...")
-        
-        # FastMCP가 내부적으로 asyncio.run() 처리하도록 함
-        import asyncio
-        
-        async def init_and_run():
-            await startup()
-            logger.info("Server running in stdio mode for MCP")
-            # 시그널 핸들러 설정
-            try:
-                signal.signal(signal.SIGINT, lambda s, f: asyncio.create_task(shutdown()))
-                signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(shutdown()))
-            except AttributeError:
-                logger.warning("Some signals not supported on this platform")
-            
-            await mcp_server.run(transport="stdio")
-        
-        # 이벤트 루프를 새로 생성해서 실행
-        asyncio.run(init_and_run())
-        
+        logger.info("Server running in stdio mode for MCP")
+
+        # FastMCPが独自イベントループを生成しlifespanコンテキストを管理
+        mcp_server.run(transport="stdio")
+
     except Exception as e:
         logger.error(f"MCP setup error: {e}")
         raise
 
 
 # ================================
-# CLI 인터페이스
+# CLIインターフェース
 # ================================
 
 def main():
-    """CLI 메인 함수"""
+    """CLIメイン関数"""
     import argparse
     
     parser = argparse.ArgumentParser(
@@ -394,8 +378,8 @@ def main():
     )
     
     args = parser.parse_args()
-    
-    # 설정 오버라이드
+
+    # 設定オーバーライド
     if args.host != settings.host:
         settings.host = args.host
     if args.port != settings.port:
@@ -404,36 +388,36 @@ def main():
         settings.dev_mode = True
     if args.debug:
         settings.debug = True
-        # 로깅 레벨 업데이트
+        # ロギングレベル更新
         logging.getLogger().setLevel(logging.DEBUG)
         logger.debug("Debug logging enabled")
-    
-    # 특수 명령어 처리
+
+    # 特殊コマンド処理
     if args.check_health:
         asyncio.run(check_health_and_exit())
         return
-    
+
     if args.reset_stats:
         asyncio.run(reset_stats_and_exit())
         return
-    
-    # 서버 시작
+
+    # サーバー起動
     logger.info(f"Configuration: host={settings.host}, port={settings.port}, dev={settings.dev_mode}")
-    
-    # MCP 모드 감지 (Claude Code에서 -m src.server로 실행될 때)
+
+    # MCPモード検知 (Claude Codeで -m src.server として実行時)
     if len(sys.argv) == 1 and not sys.stdin.isatty():
-        # stdin이 터미널이 아니면 MCP 모드로 간주
+        # stdinがターミナルでなければMCPモードとみなす
         run_mcp_server()
     else:
         run_server()
 
 
 async def check_health_and_exit():
-    """API 상태 확인 후 종료"""
+    """APIステータス確認後終了"""
     try:
         print(f"Checking {PROJECT_NAME} health...")
-        
-        # Gemini 클라이언트 생성 및 테스트
+
+        # Geminiクライアント生成とテスト
         gemini_client = await create_gemini_client(settings)
         health = await gemini_client.health_check()
         
@@ -454,7 +438,7 @@ async def check_health_and_exit():
 
 
 async def reset_stats_and_exit():
-    """통계 초기화 후 종료"""
+    """統計リセット後終了"""
     try:
         print("Resetting server statistics...")
         
@@ -470,11 +454,11 @@ async def reset_stats_and_exit():
 
 
 # ================================
-# 개발용 헬퍼 함수들
+# 開発用ヘルパー関数
 # ================================
 
 def get_server_info() -> Dict[str, Any]:
-    """서버 정보 반환 (동기 함수)"""
+    """サーバー情報を返す (同期関数)"""
     return {
         "name": PROJECT_NAME,
         "version": PROJECT_VERSION,
@@ -495,7 +479,7 @@ def get_server_info() -> Dict[str, Any]:
 
 
 def list_available_tools() -> List[Dict[str, Any]]:
-    """사용 가능한 도구 목록 반환"""
+    """利用可能なツールリストを返す"""
     return [
         generate.TOOL_METADATA,
         edit.TOOL_METADATA,
@@ -505,19 +489,29 @@ def list_available_tools() -> List[Dict[str, Any]]:
 
 
 # ================================
-# 엔트리포인트
+# エントリーポイント
 # ================================
 
-# FastMCP 서버 실행을 위한 단순한 함수
+# FastMCPサーバー実行用のシンプルな関数
 def run_mcp_server():
-    """MCP 서버 실행 (Claude Code에서 호출됨)"""
+    """MCPサーバー実行 (Claude Codeから呼び出し)"""
     logger.info("Starting nanobanana-mcp in MCP mode...")
-    
-    # API 키 검증을 위한 간단한 초기 확인
+
+    # デバッグ: 環境変数を確認
+    import os
+    api_keys = ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_AI_API_KEY"]
+    for key in api_keys:
+        val = os.environ.get(key, "")
+        if val:
+            logger.info(f"🔍 DEBUG: Found {key} in os.environ: {val[:10]}...")
+        else:
+            logger.info(f"🔍 DEBUG: {key} not found in os.environ")
+
+    # APIキー検証のための簡単な初期確認
     try:
         from .config_keyloader import SecureKeyLoader
-        
-        # 키 로더로 API 키 확인
+
+        # キーローダーでAPIキー確認
         key_loader = SecureKeyLoader(mcp_server_name="nanobanana")
         
         if not key_loader.has_key():
@@ -532,29 +526,29 @@ def run_mcp_server():
             logger.info(f"🔐 API key loaded from: {debug_info['key_info']['source_name']}")
             logger.info(f"🔐 Key name: {debug_info['key_info']['key_name']}")
             
-            # 환경변수 오염 검증
+            # 環境変数汚染検証
             pollution_check = key_loader.verify_no_os_env_pollution()
             logger.info(f"🔐 {pollution_check['message']}")
-            
+
     except Exception as e:
         logger.warning(f"Key validation warning: {e}")
         logger.info("Proceeding with server startup (key will be validated during first use)")
-    
-    # stdio 모드로 서버 실행
+
+    # stdioモードでサーバー実行
     mcp_server.run(transport="stdio")
 
 if __name__ == "__main__":
-    # MCP 모드 감지: stdin이 TTY가 아니면 MCP stdio 모드
+    # MCPモード検知: stdinがTTYでなければMCP stdioモード
     import sys
-    
+
     if not sys.stdin.isatty():
-        # MCP 모드: stdin이 파이프되어 있음 (Claude Code에서 호출)
+        # MCPモード: stdinがパイプされている (Claude Codeから呼び出し)
         logger.info("Detected MCP mode (stdio transport)")
         run_mcp_server()
     else:
-        # CLI 모드: 터미널에서 직접 실행
+        # CLIモード: ターミナルから直接実行
         logger.info("Detected CLI mode")
         main()
 else:
-    # 모듈로 import될 때 자동 실행하지 않음
+    # モジュールとしてimport時は自動実行しない
     pass
